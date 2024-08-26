@@ -33,5 +33,6 @@ lazy val root = (project in file("."))
     javaOptions += "-Dotel.java.global-autoconfigure.enabled=true",
     javaOptions += "-Dotel.service.name=basicapp",
     javaOptions += "-Dotel.exporter.otlp.endpoint=http://localhost:4317",
-    javaOptions += "dd.trace.otel.enabled=true"
+    javaOptions += "dd.trace.otel.enabled=true",
+    githubWorkflowPublishPreamble := Seq()
   )
