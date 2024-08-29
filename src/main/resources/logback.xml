@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration scan="false" debug="false">
+    <variable name="APP_LOG_LEVEL" value="${APP_LOG_LEVEL:-INFO}" />
+    <variable name="APP_LOG_APPENDER" value="${APP_LOG_APPENDER:-OpenTelemetry}" />
+
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>[%thread] %highlight(%-5level) %cyan(%logger{15}) - %msg %n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- This is a Stdout Encoder For When we have Stdout Logging-->
+    <appender name="stdoutLogstash" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <customFields>
+                {
+                "app_name":"basicapp",
+                "team": "tlohman"
+                }
+            </customFields>
+        </encoder>
+    </appender>
+
+    <appender name="OpenTelemetry"
+              class="io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender">
+    </appender>
+
+    <logger name="com.banno" level="DEBUG"/>
+    <logger name="org.http4s.client.PoolManager" level="WARN"/>
+
+    <root level="${APP_LOG_LEVEL}">
+        <appender-ref ref="STDOUT"/>
+        <appender-ref ref="OpenTelemetry"/>
+    </root>
+
+</configuration>

@@ -24,6 +24,8 @@ lazy val root = (project in file("."))
       "com.disneystreaming.smithy4s" %% "smithy4s-http4s-swagger" % smithy4sVersion.value,
       "org.typelevel" %% "log4cats-slf4j" % "2.7.0",
       "ch.qos.logback" % "logback-classic" % "1.5.6",
+      "net.logstash.logback" % "logstash-logback-encoder" % "8.0",
+      "io.opentelemetry.instrumentation" % "opentelemetry-logback-appender-1.0" % "2.5.0-alpha",
       "org.typelevel" %% "otel4s-oteljava" % "0.8.1",
       "org.typelevel" %% "otel4s-semconv" % "0.8.0",
       "io.opentelemetry" % "opentelemetry-exporter-otlp" % "1.41.0" % Runtime,

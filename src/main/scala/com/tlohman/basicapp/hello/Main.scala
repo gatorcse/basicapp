@@ -22,6 +22,7 @@ import org.typelevel.otel4s.oteljava.OtelJava
 import org.typelevel.otel4s.oteljava.context.Context
 import org.typelevel.otel4s.trace.Tracer
 import io.opentelemetry.api.{OpenTelemetry => JOpenTelemetry}
+import io.opentelemetry.instrumentation
 import smithy4s.http4s.SimpleRestJsonBuilder
 import org.typelevel.otel4s.metrics.Meter
 import io.opentelemetry.instrumentation.runtimemetrics.java17.RuntimeMetrics
@@ -30,7 +31,6 @@ class HelloImpl[F[_]: Monad: LoggerFactory] extends HelloWorldService[F] {
   private val logger: SelfAwareStructuredLogger[F] = LoggerFactory[F].getLogger
 
   override def hello(name: String, town: Option[String]): F[Greeting] = {
-    println("hi")
     town match {
       case None =>
         logger.info("No town given").as(Greeting(s"Hello, $name!"))
@@ -66,9 +66,9 @@ object Main extends IOApp.Simple {
   }
 
   override val run: IO[Unit] = {
-    implicit val baseLogging: LoggerFactory[IO] = Slf4jFactory.create[IO]
+    val baseLogging: LoggerFactory[IO] = Slf4jFactory.create[IO]
     val bareLogger = baseLogging.getLogger
-    bareLogger.info("Beginning app.") *>
+    bareLogger.info("Beginning application.") *>
       OtelJava
         .autoConfigured[IO]()
         .flatTap(otel4s => registerRuntimeMetrics(otel4s.underlying))
@@ -80,8 +80,8 @@ object Main extends IOApp.Simple {
             implicit0(meters: Meter[IO]) <- otel4s.meterProvider.get(
               "com.tlohman.basicapp"
             )
-//          implicit0(loggerFactory: LoggerFactory[IO]) = TracedLoggerFactory
-//            .traced(baseLogging)
+            implicit0(loggerFactory: LoggerFactory[IO]) = TracedLoggerFactory
+              .traced(baseLogging)
             _ <- Routes
               .all[IO]
               .flatMap { routes =>
@@ -92,6 +92,7 @@ object Main extends IOApp.Simple {
                   .withHttpApp(routes.orNotFound)
                   .build
               }
+              .evalTap(_ => bareLogger.info("Starting application."))
               .useForever
           } yield ()
 

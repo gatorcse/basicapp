@@ -35,54 +35,46 @@ object TraceContextMiddleware {
       HttpApp[F] { req =>
         MonadCancelThrow[F].uncancelable { poll =>
           Tracer[F].joinOrRoot(req.headers) {
-            OptionT
-              .fromOption[F](endpoint.hints.get[smithy.api.Http])
-              .semiflatMap { hint =>
-                Tracer[F]
-                  .spanBuilder(serverSpanName(hint))
-                  .withSpanKind(SpanKind.Server)
-                  .addAttributes(requestAttributes(req, hint))
-                  .build
-                  .use { span =>
-                    poll(base.run(req))
-                      // base.run(req)
-                      .guaranteeCase { outcome =>
-                        (outcome match {
-                          case Outcome.Succeeded(fa) =>
-                            fa.flatMap { res =>
-                              val out = responseAttributes(res)
-                              span.addAttributes(out) >> span
-                                .setStatus(
-                                  StatusCode.Error
-                                ) // TODO: Additional response attributes???
-                                .unlessA(res.status.isSuccess)
+            val hint = endpoint.hints.get[smithy.api.Http]
+            Tracer[F]
+              .spanBuilder(serverSpanName(req, hint))
+              .withSpanKind(SpanKind.Server)
+              .addAttributes(requestAttributes(req, hint))
+              .build
+              .use { span =>
+                poll(base.run(req))
+                  .guaranteeCase { outcome =>
+                    (outcome match {
+                      case Outcome.Succeeded(fa) =>
+                        fa.flatMap { res =>
+                          val out = responseAttributes(res)
+                          span.addAttributes(out) >> span
+                            .setStatus(
+                              StatusCode.Error
+                            ) // TODO: Additional response attributes???
+                            .unlessA(res.status.isSuccess)
 
-                            }
-                          case Outcome.Errored(e) =>
-                            span.recordException(e)
-                          case Outcome.Canceled() =>
-                            Sync[F].unit
-                        })
-                      }
+                        }
+                      case Outcome.Errored(e) =>
+                        span.recordException(e)
+                      case Outcome.Canceled() =>
+                        Sync[F].unit
+                    })
                   }
-              }
-              .getOrElseF {
-                Tracer[F]
-                  .spanBuilder(s"${req.method.name}")
-                  .build
-                  .use(_ => base(req))
               }
           }
         }
       }
   }
 
-  private def serverSpanName[F[_]](hint: Http) =
-    s"${hint.method.value} ${hint.uri.value}"
+  private def serverSpanName[F[_]](req: Request[F], hint: Option[Http]) =
+    hint
+      .map(h => s"${h.method.value} ${h.uri.value}")
+      .getOrElse(s"${req.method.name}")
 
   private def requestAttributes[F[_]](
       request: Request[F],
-      hint: Http
+      hint: Option[Http]
   ): Attributes = {
     def hostAndPort(host: String, mPort: Option[Int]): List[Attribute[_]] =
       ServerAttributes.ServerAddress(host) :: mPort
@@ -91,43 +83,48 @@ object TraceContextMiddleware {
 
     import org.http4s.headers._
     Attributes(
-      List(
-        HttpAttributes.HttpRequestMethod(hint.method.value),
-        HttpAttributes.HttpRoute(hint.uri.value)
-      ) ++
-        request.uri.scheme
-          .map(sch => UrlAttributes.UrlScheme(sch.value))
-          .toList ++
-        request.headers
-          .get[Forwarded]
-          .flatMap(_.values.head.maybeHost)
-          .map(h => hostAndPort(h.host.renderString, h.port))
-          .orElse(
-            request.headers.get[Host].map(h => hostAndPort(h.host, h.port))
-          )
-          .getOrElse {
-            val auth = RequestKey
-              .fromRequest(request)
-              .authority
-            hostAndPort(auth.host.renderString, auth.port)
-          } ++
-        request.headers
-          .get[`User-Agent`]
-          .map { ua =>
-            UserAgentAttributes
-              .UserAgentOriginal(`User-Agent`.headerInstance.value(ua))
-          } ++
-        request.headers
-          .get[`X-Forwarded-For`]
-          .map(xff => `X-Forwarded-For`.headerInstance.value(xff))
-          .orElse(request.remoteAddr.map(_.toString))
-          .map(c => ClientAttributes.ClientAddress(c)) ++
-        request.remote.toList.flatMap { addr =>
+      hint
+        .map { h =>
           List(
-            NetworkAttributes.NetworkPeerAddress(addr.host.toString),
-            NetworkAttributes.NetworkPeerPort(addr.port.value)
+            HttpAttributes.HttpRequestMethod(h.method.value),
+            HttpAttributes.HttpRoute(h.uri.value)
           )
-        }: _*
+        }
+        .getOrElse(List(HttpAttributes.HttpRequestMethod(request.method.name)))
+        ++
+          request.uri.scheme
+            .map(sch => UrlAttributes.UrlScheme(sch.value))
+            .toList ++
+          request.headers
+            .get[Forwarded]
+            .flatMap(_.values.head.maybeHost)
+            .map(h => hostAndPort(h.host.renderString, h.port))
+            .orElse(
+              request.headers.get[Host].map(h => hostAndPort(h.host, h.port))
+            )
+            .getOrElse {
+              val auth = RequestKey
+                .fromRequest(request)
+                .authority
+              hostAndPort(auth.host.renderString, auth.port)
+            } ++
+          request.headers
+            .get[`User-Agent`]
+            .map { ua =>
+              UserAgentAttributes
+                .UserAgentOriginal(`User-Agent`.headerInstance.value(ua))
+            } ++
+          request.headers
+            .get[`X-Forwarded-For`]
+            .map(xff => `X-Forwarded-For`.headerInstance.value(xff))
+            .orElse(request.remoteAddr.map(_.toString))
+            .map(c => ClientAttributes.ClientAddress(c)) ++
+          request.remote.toList.flatMap { addr =>
+            List(
+              NetworkAttributes.NetworkPeerAddress(addr.host.toString),
+              NetworkAttributes.NetworkPeerPort(addr.port.value)
+            )
+          }: _*
     )
   }
 

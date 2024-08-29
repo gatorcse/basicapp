@@ -6,14 +6,10 @@ import cats.syntax.all._
 import org.typelevel.log4cats.{LoggerFactory, SelfAwareStructuredLogger}
 import org.typelevel.otel4s.trace.Tracer
 
-trait TracedLoggerFactory[F[_]] extends LoggerFactory[F] {
-
-}
-
 object TracedLoggerFactory extends LoggerFactoryGenCompanion {
-  def apply[F[_]: TracedLoggerFactory]: TracedLoggerFactory[F] = implicitly
-
-  def traced[F[_]: Monad : Tracer](base: LoggerFactory[F]): TracedLoggerFactory[F] = new TracedLoggerFactory[F] {
+  def traced[F[_]: Monad: Tracer](
+      base: LoggerFactory[F]
+  ): LoggerFactory[F] = new LoggerFactory[F] {
 
     override def getLoggerFromName(name: String): SelfAwareStructuredLogger[F] =
       new TracedLogger[F](base.getLoggerFromName(name))
@@ -23,7 +19,8 @@ object TracedLoggerFactory extends LoggerFactoryGenCompanion {
   }
 }
 
-class TracedLogger[F[_]: Monad: Tracer](base: SelfAwareStructuredLogger[F]) extends SelfAwareStructuredLogger[F] {
+class TracedLogger[F[_]: Monad: Tracer](base: SelfAwareStructuredLogger[F])
+    extends SelfAwareStructuredLogger[F] {
 
   override def isTraceEnabled: F[Boolean] = base.isTraceEnabled
 
@@ -37,7 +34,11 @@ class TracedLogger[F[_]: Monad: Tracer](base: SelfAwareStructuredLogger[F]) exte
 
   private def enrich(ctx: Map[String, String]): F[Map[String, String]] =
     Tracer[F].currentSpanContext.map {
-      case Some(spanContext) => ctx ++ Seq("TraceId" -> spanContext.traceIdHex, "SpanId" -> spanContext.spanIdHex)
+      case Some(spanContext) =>
+        ctx ++ Seq(
+          "TraceId" -> spanContext.traceIdHex,
+          "SpanId" -> spanContext.spanIdHex
+        )
       case None => ctx
     }
 
@@ -46,7 +47,9 @@ class TracedLogger[F[_]: Monad: Tracer](base: SelfAwareStructuredLogger[F]) exte
       base.trace(enrichedContext)(msg)
     }
 
-  override def trace(ctx: Map[String, String], t: Throwable)(msg: => String): F[Unit] =
+  override def trace(ctx: Map[String, String], t: Throwable)(
+      msg: => String
+  ): F[Unit] =
     enrich(ctx).flatMap { enrichedContext =>
       base.trace(enrichedContext, t)(msg)
     }
@@ -56,7 +59,9 @@ class TracedLogger[F[_]: Monad: Tracer](base: SelfAwareStructuredLogger[F]) exte
       base.debug(enrichedContext)(msg)
     }
 
-  override def debug(ctx: Map[String, String], t: Throwable)(msg: => String): F[Unit] =
+  override def debug(ctx: Map[String, String], t: Throwable)(
+      msg: => String
+  ): F[Unit] =
     enrich(ctx).flatMap { enrichedContext =>
       base.debug(enrichedContext, t)(msg)
     }
@@ -66,7 +71,9 @@ class TracedLogger[F[_]: Monad: Tracer](base: SelfAwareStructuredLogger[F]) exte
       base.info(enrichedContext)(msg)
     }
 
-  override def info(ctx: Map[String, String], t: Throwable)(msg: => String): F[Unit] =
+  override def info(ctx: Map[String, String], t: Throwable)(
+      msg: => String
+  ): F[Unit] =
     enrich(ctx).flatMap { enrichedContext =>
       base.info(enrichedContext, t)(msg)
     }
@@ -76,7 +83,9 @@ class TracedLogger[F[_]: Monad: Tracer](base: SelfAwareStructuredLogger[F]) exte
       base.warn(enrichedContext)(msg)
     }
 
-  override def warn(ctx: Map[String, String], t: Throwable)(msg: => String): F[Unit] =
+  override def warn(ctx: Map[String, String], t: Throwable)(
+      msg: => String
+  ): F[Unit] =
     enrich(ctx).flatMap { enrichedContext =>
       base.warn(enrichedContext, t)(msg)
     }
@@ -86,7 +95,9 @@ class TracedLogger[F[_]: Monad: Tracer](base: SelfAwareStructuredLogger[F]) exte
       base.error(enrichedContext)(msg)
     }
 
-  override def error(ctx: Map[String, String], t: Throwable)(msg: => String): F[Unit] =
+  override def error(ctx: Map[String, String], t: Throwable)(
+      msg: => String
+  ): F[Unit] =
     enrich(ctx).flatMap { enrichedContext =>
       base.error(enrichedContext, t)(msg)
     }
