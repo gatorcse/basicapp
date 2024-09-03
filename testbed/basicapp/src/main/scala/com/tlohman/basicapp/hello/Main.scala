@@ -18,14 +18,12 @@ import org.http4s.client.defaults
 import org.typelevel.log4cats.{LoggerFactory, SelfAwareStructuredLogger}
 import org.typelevel.log4cats.otel4s.TracedLoggerFactory
 import org.typelevel.log4cats.slf4j.Slf4jFactory
-import org.typelevel.otel4s.oteljava.OtelJava
+import org.typelevel.otel4s.oteljava.OtelJavaNoSDK
 import org.typelevel.otel4s.oteljava.context.Context
 import org.typelevel.otel4s.trace.Tracer
 import io.opentelemetry.api.{OpenTelemetry => JOpenTelemetry}
-import io.opentelemetry.instrumentation
 import smithy4s.http4s.SimpleRestJsonBuilder
 import org.typelevel.otel4s.metrics.Meter
-import io.opentelemetry.instrumentation.runtimemetrics.java17.RuntimeMetrics
 
 class HelloImpl[F[_]: Monad: LoggerFactory] extends HelloWorldService[F] {
   private val logger: SelfAwareStructuredLogger[F] = LoggerFactory[F].getLogger
@@ -57,45 +55,38 @@ object Routes {
 }
 
 object Main extends IOApp.Simple {
-  private def registerRuntimeMetrics[F[_]: Sync](
-      openTelemetry: JOpenTelemetry
-  ): Resource[F, Unit] = {
-    val acquire = Sync[F].delay(RuntimeMetrics.create(openTelemetry))
-
-    Resource.make(acquire)(r => Sync[F].delay(r.close())).void
-  }
 
   override val run: IO[Unit] = {
     val baseLogging: LoggerFactory[IO] = Slf4jFactory.create[IO]
     val bareLogger = baseLogging.getLogger
     bareLogger.info("Beginning application.") *>
-      OtelJava
-        .autoConfigured[IO]()
-        .flatTap(otel4s => registerRuntimeMetrics(otel4s.underlying))
-        .use { otel4s =>
-          for {
-            implicit0(tracer: Tracer[IO]) <- otel4s.tracerProvider.get(
-              "com.tlohman.basicapp"
+      (
+        for {
+          otel4s <- OtelJavaNoSDK.global[IO]
+          implicit0(tracer: Tracer[IO]) <- otel4s.tracerProvider.get(
+            "com.tlohman.basicapp"
+          )
+          implicit0(meters: Meter[IO]) <- otel4s.meterProvider.get(
+            "com.tlohman.basicapp"
+          )
+          _ <- IO.println(otel4s.underlying.getTracer("com.tlohman.basicapp").getClass.getName)
+          implicit0(loggerFactory: LoggerFactory[IO]) <- TracedLoggerFactory
+            .traced(
+              baseLogging
             )
-            implicit0(meters: Meter[IO]) <- otel4s.meterProvider.get(
-              "com.tlohman.basicapp"
-            )
-            implicit0(loggerFactory: LoggerFactory[IO]) = TracedLoggerFactory
-              .traced(baseLogging)
-            _ <- Routes
-              .all[IO]
-              .flatMap { routes =>
-                EmberServerBuilder
-                  .default[IO]
-                  .withPort(port"8080")
-                  .withHost(host"localhost")
-                  .withHttpApp(routes.orNotFound)
-                  .build
-              }
-              .evalTap(_ => bareLogger.info("Starting application."))
-              .useForever
-          } yield ()
-
-        }
+          _ <- Routes
+            .all[IO]
+            .flatMap { routes =>
+              EmberServerBuilder
+                .default[IO]
+                .withPort(port"8080")
+                .withHost(host"localhost")
+                .withHttpApp(routes.orNotFound)
+                .build
+            }
+            .evalTap(_ => bareLogger.info("Starting application."))
+            .useForever
+      } yield ()
+    )
   }
 }

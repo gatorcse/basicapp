@@ -23,14 +23,18 @@
 
     <appender name="OpenTelemetry"
               class="io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender">
+              <captureKeyValuePairAttributes>true</captureKeyValuePairAttributes>
+              <captureLoggerContext>true</captureLoggerContext>
+              <captureArguments>true</captureArguments>
+              <captureMdcAttributes>true</captureMdcAttributes>
     </appender>
 
     <logger name="com.banno" level="DEBUG"/>
     <logger name="org.http4s.client.PoolManager" level="WARN"/>
 
     <root level="${APP_LOG_LEVEL}">
-        <appender-ref ref="STDOUT"/>
         <appender-ref ref="OpenTelemetry"/>
+        <appender-ref ref="stdoutLogstash"/>
     </root>
 
 </configuration>

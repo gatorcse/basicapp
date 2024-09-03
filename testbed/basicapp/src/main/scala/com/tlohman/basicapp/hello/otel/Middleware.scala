@@ -35,6 +35,7 @@ object TraceContextMiddleware {
       HttpApp[F] { req =>
         MonadCancelThrow[F].uncancelable { poll =>
           Tracer[F].joinOrRoot(req.headers) {
+//          Tracer[F].rootScope {
             val hint = endpoint.hints.get[smithy.api.Http]
             Tracer[F]
               .spanBuilder(serverSpanName(req, hint))
@@ -42,6 +43,8 @@ object TraceContextMiddleware {
               .addAttributes(requestAttributes(req, hint))
               .build
               .use { span =>
+                Console[F].println(span.context.traceIdHex) *>
+                Console[F].println(req.headers) *>
                 poll(base.run(req))
                   .guaranteeCase { outcome =>
                     (outcome match {

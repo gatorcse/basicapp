@@ -3,23 +3,29 @@ package otel4s
 
 import cats._
 import cats.syntax.all._
+import cats.effect._
+import cats.effect.implicits._
 import org.typelevel.log4cats.{LoggerFactory, SelfAwareStructuredLogger}
 import org.typelevel.otel4s.trace.Tracer
 
 object TracedLoggerFactory extends LoggerFactoryGenCompanion {
-  def traced[F[_]: Monad: Tracer](
-      base: LoggerFactory[F]
-  ): LoggerFactory[F] = new LoggerFactory[F] {
+  def traced[F[_]: Sync: Tracer](
+      base: LoggerFactory[F],
+  ): F[LoggerFactory[F]] =
+    (
+      new LoggerFactory[F] {
+        override def getLoggerFromName(
+            name: String
+        ): SelfAwareStructuredLogger[F] =
+          new TracedLogger[F](base.getLoggerFromName(name))
 
-    override def getLoggerFromName(name: String): SelfAwareStructuredLogger[F] =
-      new TracedLogger[F](base.getLoggerFromName(name))
-
-    override def fromName(name: String): F[SelfAwareStructuredLogger[F]] =
-      base.fromName(name).map(b => new TracedLogger[F](b))
-  }
+        override def fromName(name: String): F[SelfAwareStructuredLogger[F]] =
+          base.fromName(name).map(b => new TracedLogger[F](b))
+      }
+      ).pure[F]
 }
 
-class TracedLogger[F[_]: Monad: Tracer](base: SelfAwareStructuredLogger[F])
+class TracedLogger[F[_]: Sync: Tracer](base: SelfAwareStructuredLogger[F])
     extends SelfAwareStructuredLogger[F] {
 
   override def isTraceEnabled: F[Boolean] = base.isTraceEnabled
@@ -33,14 +39,17 @@ class TracedLogger[F[_]: Monad: Tracer](base: SelfAwareStructuredLogger[F])
   override def isErrorEnabled: F[Boolean] = base.isErrorEnabled
 
   private def enrich(ctx: Map[String, String]): F[Map[String, String]] =
-    Tracer[F].currentSpanContext.map {
-      case Some(spanContext) =>
-        ctx ++ Seq(
-          "TraceId" -> spanContext.traceIdHex,
-          "SpanId" -> spanContext.spanIdHex
-        )
-      case None => ctx
-    }
+    Tracer[F].currentSpanContext
+      .flatTap(m => Sync[F].delay(println(m)))
+      .map {
+        case Some(spanContext) =>
+          ctx ++ Seq(
+            "TraceId" -> spanContext.traceIdHex,
+            "SpanId" -> spanContext.spanIdHex
+          )
+        case None => ctx
+      }
+      .flatTap(m => Sync[F].delay(println(m)))
 
   override def trace(ctx: Map[String, String])(msg: => String): F[Unit] =
     enrich(ctx).flatMap { enrichedContext =>
@@ -138,7 +147,9 @@ class TracedLogger[F[_]: Monad: Tracer](base: SelfAwareStructuredLogger[F])
     }
 
   override def info(message: => String): F[Unit] =
-    enrich(Map.empty).flatMap { enrichedContext =>
+    enrich(Map.empty)
+      .flatTap(m => Sync[F].delay(println(m)))
+      .flatMap { enrichedContext =>
       base.info(enrichedContext)(message)
     }
 
